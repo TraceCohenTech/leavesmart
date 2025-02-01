@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Smart Wake-Up Alarm Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; background: #f4f4f4; }
+    h1 { color: #333; }
+    form { background: #fff; padding: 20px; border-radius: 8px; max-width: 500px; margin: auto; }
+    label { display: block; margin-top: 15px; }
+    input, select { width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; }
+    button { margin-top: 20px; padding: 10px 15px; background: #007BFF; border: none; color: #fff; border-radius: 4px; cursor: pointer; }
+    .result { margin-top: 20px; background: #e2f7e2; padding: 15px; border-radius: 8px; }
+    .notification { margin-top: 10px; font-size: 0.9em; color: #555; }
+  </style>
+</head>
+<body>
+  <h1>Smart Wake-Up Alarm Demo</h1>
+  <form id="alarmForm">
+    <label for="arrivalTime">Desired Arrival Time (HH:MM, 24-hour format):</label>
+    <input type="time" id="arrivalTime" required>
+
+    <label for="routineDuration">Morning Routine Duration (minutes):</label>
+    <input type="number" id="routineDuration" placeholder="e.g., 45" required>
+
+    <label for="destination">Destination:</label>
+    <select id="destination" required>
+      <option value="work">Work</option>
+      <option value="school">School</option>
+      <option value="gym">Gym</option>
+      <option value="other">Other</option>
+    </select>
+
+    <label for="transport">Preferred Transportation:</label>
+    <select id="transport" required>
+      <option value="car">Car</option>
+      <option value="public">Public Transport</option>
+      <option value="bike">Bike</option>
+      <option value="walk">Walk</option>
+    </select>
+
+    <button type="submit">Calculate Wake-Up Time</button>
+  </form>
+
+  <div id="result" class="result" style="display:none;"></div>
+  
+  <script>
+    document.getElementById('alarmForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      
+      // Collect input values
+      const arrivalTime = document.getElementById('arrivalTime').value;
+      const routineDuration = parseInt(document.getElementById('routineDuration').value, 10);
+      const destination = document.getElementById('destination').value;
+      const transport = document.getElementById('transport').value;
+
+      // Simulated data: In a real app, these values would come from APIs
+      const weatherDelay = getSimulatedWeatherDelay(); // in minutes
+      const trafficDelay = getSimulatedTrafficDelay(transport); // in minutes
+      const bufferTime = Math.max(weatherDelay, trafficDelay); // simple algorithm: use worst-case delay
+
+      // Calculate wake-up time:
+      // 1. Convert arrivalTime to minutes since midnight
+      const [arrivalHours, arrivalMinutes] = arrivalTime.split(':').map(Number);
+      const arrivalTotalMinutes = arrivalHours * 60 + arrivalMinutes;
+      
+      // 2. Subtract routineDuration and bufferTime to get wake-up time
+      let wakeUpMinutes = arrivalTotalMinutes - routineDuration - bufferTime;
+      if(wakeUpMinutes < 0) wakeUpMinutes += 24 * 60; // wrap around midnight
+      
+      // 3. Format wake-up time
+      const wakeUpHours = Math.floor(wakeUpMinutes / 60);
+      const wakeUpRemainingMinutes = wakeUpMinutes % 60;
+      const formattedWakeUpTime = `${String(wakeUpHours).padStart(2, '0')}:${String(wakeUpRemainingMinutes).padStart(2, '0')}`;
+
+      // Prepare detailed notification
+      const notification = `
+        Based on a routine of ${routineDuration} minutes,<br>
+        a simulated weather delay of ${weatherDelay} minutes,<br>
+        and a simulated traffic delay of ${trafficDelay} minutes,<br>
+        the calculated buffer time is ${bufferTime} minutes.
+      `;
+
+      // Display result
+      const resultDiv = document.getElementById('result');
+      resultDiv.innerHTML = `<h2>Suggested Wake-Up Time: ${formattedWakeUpTime}</h2>
+                             <div class="notification">${notification}</div>`;
+      resultDiv.style.display = 'block';
+    });
+
+    // Simulated API functions
+    function getSimulatedWeatherDelay() {
+      // Placeholder: in a real app, use a weather API (e.g., OpenWeatherMap)
+      // Here, we simulate a delay between 0 and 15 minutes.
+      return Math.floor(Math.random() * 16);
+    }
+
+    function getSimulatedTrafficDelay(transport) {
+      // Placeholder: in a real app, use a traffic API (e.g., Google Maps Traffic API)
+      // For simulation, adjust delay based on transportation mode.
+      let baseDelay;
+      switch(transport) {
+        case 'car': baseDelay = Math.floor(Math.random() * 21); break; // up to 20 minutes delay
+        case 'public': baseDelay = Math.floor(Math.random() * 16); break; // up to 15 minutes delay
+        case 'bike': baseDelay = Math.floor(Math.random() * 11); break; // up to 10 minutes delay
+        case 'walk': baseDelay = Math.floor(Math.random() * 6); break;  // up to 5 minutes delay
+        default: baseDelay = 0;
+      }
+      return baseDelay;
+    }
+  </script>
+</body>
+</html>
