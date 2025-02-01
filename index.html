@@ -34,13 +34,13 @@
     <!-- Preferred Transportation Method -->
     <label for="transport">Preferred Transportation:</label>
     <select id="transport" required>
-      <option value="driving">Driving</option>
-      <option value="transit">Public Transit</option>
-      <option value="bicycling">Bicycling</option>
-      <option value="walking">Walking</option>
+      <option value="DRIVING">Driving</option>
+      <option value="TRANSIT">Public Transit</option>
+      <option value="BICYCLING">Bicycling</option>
+      <option value="WALKING">Walking</option>
     </select>
 
-    <!-- Hidden field to show current location info -->
+    <!-- Location info -->
     <div id="locationInfo" style="margin-top:15px; font-style:italic;"></div>
 
     <button type="submit">Calculate Wake-Up Time</button>
@@ -48,11 +48,18 @@
 
   <div id="result" class="result" style="display:none;"></div>
   
+  <!-- Load Google Maps JavaScript API with your API key -->
+  <script async defer
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDuAjJbsKOKwZAKedkxRsRuH2V7rzP44sE">
+  </script>
+  
   <script>
-    // Global variable to store current location coordinates
+    // Global variable to store current location coordinates.
     let currentCoords = null;
+    // Your OpenWeatherMap API key.
+    const openWeatherApiKey = '233c2d7f4415f3092eef1fd47e85dbfd';
 
-    // Attempt to get the user's current location when the page loads
+    // Attempt to get the user's current location when the page loads.
     window.onload = function() {
       const locationInfo = document.getElementById('locationInfo');
       if (navigator.geolocation) {
@@ -74,114 +81,153 @@
       }
     };
 
+    // Wrap the Google Maps Directions Service call in a Promise.
+    function getTravelTimePromise(origin, destination, travelMode) {
+      return new Promise((resolve, reject) => {
+        const directionsService = new google.maps.DirectionsService();
+        const request = {
+          origin: origin,
+          destination: destination,
+          travelMode: travelMode
+        };
+        directionsService.route(request, function(result, status) {
+          if (status === google.maps.DirectionsStatus.OK) {
+            let totalSeconds = 0;
+            result.routes[0].legs.forEach(function(leg) {
+              totalSeconds += leg.duration.value;
+            });
+            resolve(Math.round(totalSeconds / 60)); // return travel time in minutes.
+          } else {
+            reject("Directions request failed: " + status);
+          }
+        });
+      });
+    }
+
+    // Get current weather delay by calling the OpenWeatherMap API.
+    // Based on the weather conditions, we assign additional delay.
+    function getWeatherDelayPromise(lat, lon) {
+      return new Promise((resolve, reject) => {
+        const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${openWeatherApiKey}&units=metric`;
+        fetch(url)
+          .then(response => {
+            if (!response.ok) {
+              throw new Error("Weather API error: " + response.status);
+            }
+            return response.json();
+          })
+          .then(data => {
+            // Example: Add delay based on weather condition.
+            // You can refine these values as needed.
+            let delay = 0;
+            if (data.weather && data.weather.length > 0) {
+              const condition = data.weather[0].main;
+              switch(condition) {
+                case "Thunderstorm":
+                  delay = 15;
+                  break;
+                case "Drizzle":
+                  delay = 5;
+                  break;
+                case "Rain":
+                  delay = 10;
+                  break;
+                case "Snow":
+                  delay = 15;
+                  break;
+                case "Extreme":
+                  delay = 20;
+                  break;
+                default:
+                  delay = 0;
+              }
+            }
+            resolve(delay);
+          })
+          .catch(error => {
+            console.error("Error fetching weather data:", error);
+            // In case of error, assume no weather delay.
+            resolve(0);
+          });
+      });
+    }
+
+    // Simulated function to return traffic delay based on transportation mode (in minutes).
+    function getSimulatedTrafficDelay(transport) {
+      let baseDelay;
+      switch (transport) {
+        case 'DRIVING': baseDelay = Math.floor(Math.random() * 21); break; // up to 20 minutes.
+        case 'TRANSIT': baseDelay = Math.floor(Math.random() * 16); break; // up to 15 minutes.
+        case 'BICYCLING': baseDelay = Math.floor(Math.random() * 11); break; // up to 10 minutes.
+        case 'WALKING': baseDelay = Math.floor(Math.random() * 6); break;  // up to 5 minutes.
+        default: baseDelay = 0;
+      }
+      return baseDelay;
+    }
+
+    // Form submission handler.
     document.getElementById('alarmForm').addEventListener('submit', function(e) {
       e.preventDefault();
 
-      // Validate that we have a current location
       if (!currentCoords) {
         alert('Current location not available. Please allow location access or try again.');
         return;
       }
 
-      // Collect input values
       const arrivalTime = document.getElementById('arrivalTime').value;
       const routineDuration = parseInt(document.getElementById('routineDuration').value, 10);
       const destination = document.getElementById('destination').value;
-      const transport = document.getElementById('transport').value;
+      const transport = document.getElementById('transport').value; // 'DRIVING', etc.
 
-      // Show a loading message while "fetching" data
       const resultDiv = document.getElementById('result');
       resultDiv.style.display = 'block';
       resultDiv.innerHTML = `<p class="loading">Calculating route and conditions, please wait...</p>`;
 
-      // Simulate API calls to get travel time, weather delay, and traffic delay.
-      // In a real application, these would be asynchronous API calls.
-      setTimeout(function() {
-        const travelTime = getSimulatedTravelTime(currentCoords, destination, transport); // in minutes
-        const weatherDelay = getSimulatedWeatherDelay(); // in minutes
-        const trafficDelay = getSimulatedTrafficDelay(transport); // in minutes
+      const origin = `${currentCoords.latitude},${currentCoords.longitude}`;
 
-        // Buffer time: we add the travel time plus the worst-case delay, then add a little extra buffer
-        const bufferTime = travelTime + Math.max(weatherDelay, trafficDelay) + 5; // extra 5 minutes as safety margin
+      // Create promises for travel time and weather delay.
+      const travelTimePromise = getTravelTimePromise(origin, destination, transport);
+      const weatherDelayPromise = getWeatherDelayPromise(currentCoords.latitude, currentCoords.longitude);
 
-        // Convert desired arrival time to minutes since midnight
-        const [arrivalHours, arrivalMinutes] = arrivalTime.split(':').map(Number);
-        const arrivalTotalMinutes = arrivalHours * 60 + arrivalMinutes;
-        
-        // Calculate wake-up time: arrival time minus routine duration and buffer time
-        let wakeUpMinutes = arrivalTotalMinutes - routineDuration - bufferTime;
-        if (wakeUpMinutes < 0) wakeUpMinutes += 24 * 60; // wrap around midnight
-        
-        const wakeUpHours = Math.floor(wakeUpMinutes / 60);
-        const wakeUpRemainingMinutes = wakeUpMinutes % 60;
-        const formattedWakeUpTime = `${String(wakeUpHours).padStart(2, '0')}:${String(wakeUpRemainingMinutes).padStart(2, '0')}`;
+      // Wait for both promises to resolve.
+      Promise.all([travelTimePromise, weatherDelayPromise])
+        .then(results => {
+          const travelTime = results[0]; // in minutes from Google Maps.
+          const weatherDelay = results[1]; // in minutes from OpenWeatherMap.
+          const trafficDelay = getSimulatedTrafficDelay(transport); // simulated traffic delay.
 
-        // Prepare a detailed notification message
-        const notification = `
-          <strong>Travel Time:</strong> ${travelTime} minutes<br>
-          <strong>Simulated Weather Delay:</strong> ${weatherDelay} minutes<br>
-          <strong>Simulated Traffic Delay:</strong> ${trafficDelay} minutes<br>
-          <strong>Total Buffer Time (travel + delays + safety margin):</strong> ${bufferTime} minutes<br>
-          <br>
-          <em>The wake-up time is calculated as:</em><br>
-          Arrival Time - (Morning Routine Duration + Total Buffer Time)
-        `;
+          // Total buffer: travel time + worst-case delay (weather vs. traffic) + safety margin (e.g., 5 minutes).
+          const bufferTime = travelTime + Math.max(weatherDelay, trafficDelay) + 5;
 
-        resultDiv.innerHTML = `<h2>Suggested Wake-Up Time: ${formattedWakeUpTime}</h2>
-                               <div class="notification">${notification}</div>`;
-      }, 1500); // simulate delay for API responses
+          // Convert desired arrival time to minutes since midnight.
+          const [arrivalHours, arrivalMinutes] = arrivalTime.split(':').map(Number);
+          const arrivalTotalMinutes = arrivalHours * 60 + arrivalMinutes;
+          
+          // Calculate wake-up time.
+          let wakeUpMinutes = arrivalTotalMinutes - routineDuration - bufferTime;
+          if (wakeUpMinutes < 0) wakeUpMinutes += 24 * 60; // handle midnight wrap-around.
+          
+          const wakeUpHours = Math.floor(wakeUpMinutes / 60);
+          const wakeUpRemainingMinutes = wakeUpMinutes % 60;
+          const formattedWakeUpTime = `${String(wakeUpHours).padStart(2, '0')}:${String(wakeUpRemainingMinutes).padStart(2, '0')}`;
+
+          const notification = `
+            <strong>Travel Time (from Google Maps):</strong> ${travelTime} minutes<br>
+            <strong>Weather Delay (from OpenWeatherMap):</strong> ${weatherDelay} minutes<br>
+            <strong>Simulated Traffic Delay:</strong> ${trafficDelay} minutes<br>
+            <strong>Total Buffer Time (travel + delays + safety margin):</strong> ${bufferTime} minutes<br>
+            <br>
+            <em>Calculation:</em><br>
+            Arrival Time - (Morning Routine Duration + Total Buffer Time)
+          `;
+
+          resultDiv.innerHTML = `<h2>Suggested Wake-Up Time: ${formattedWakeUpTime}</h2>
+                                 <div class="notification">${notification}</div>`;
+        })
+        .catch(error => {
+          resultDiv.innerHTML = `<p>Error: ${error}</p>`;
+        });
     });
-
-    // Simulated API function: Calculate travel time based on current location, destination, and transportation mode.
-    function getSimulatedTravelTime(coords, destination, transport) {
-      // In a real app, you would use a Directions API here.
-      // For simulation, we generate a travel time based on random values and transportation type.
-      // We assume:
-      // - Driving: 10-30 minutes
-      // - Public Transit: 15-40 minutes
-      // - Bicycling: 10-25 minutes
-      // - Walking: 20-60 minutes
-
-      let minTime, maxTime;
-      switch (transport) {
-        case 'driving':
-          minTime = 10; maxTime = 30;
-          break;
-        case 'transit':
-          minTime = 15; maxTime = 40;
-          break;
-        case 'bicycling':
-          minTime = 10; maxTime = 25;
-          break;
-        case 'walking':
-          minTime = 20; maxTime = 60;
-          break;
-        default:
-          minTime = 15; maxTime = 40;
-      }
-      return Math.floor(Math.random() * (maxTime - minTime + 1)) + minTime;
-    }
-
-    // Simulated function to return weather delay (e.g., based on current weather conditions)
-    function getSimulatedWeatherDelay() {
-      // In a real application, fetch weather conditions (rain, snow, etc.) using a Weather API.
-      // Simulate delay between 0 and 10 minutes.
-      return Math.floor(Math.random() * 11);
-    }
-
-    // Simulated function to return traffic delay based on transportation mode
-    function getSimulatedTrafficDelay(transport) {
-      // In a real application, use a Traffic API to get current congestion data.
-      let baseDelay;
-      switch (transport) {
-        case 'driving': baseDelay = Math.floor(Math.random() * 21); break; // up to 20 minutes
-        case 'transit': baseDelay = Math.floor(Math.random() * 16); break; // up to 15 minutes
-        case 'bicycling': baseDelay = Math.floor(Math.random() * 11); break; // up to 10 minutes
-        case 'walking': baseDelay = Math.floor(Math.random() * 6); break;  // up to 5 minutes
-        default: baseDelay = 0;
-      }
-      return baseDelay;
-    }
   </script>
 </body>
 </html>
